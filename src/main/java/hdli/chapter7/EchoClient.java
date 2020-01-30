@@ -1,21 +1,27 @@
 package hdli.chapter7;
 
 import io.netty.bootstrap.Bootstrap;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
-import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelInitializer;
-import io.netty.channel.ChannelOption;
-import io.netty.channel.EventLoopGroup;
+import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
-import io.netty.handler.codec.DelimiterBasedFrameDecoder;
-import io.netty.handler.codec.string.StringDecoder;
+import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
+import io.netty.handler.codec.LengthFieldPrepender;
 
 public class EchoClient {
 
-    public void connect(int port, String host) {
+    private final String host;
+    private final int port;
+    private final int sendNumber;
+
+
+    public EchoClient(String host, int port, int sendNumber) {
+        this.host = host;
+        this.port = port;
+        this.sendNumber = sendNumber;
+    }
+
+    public void connect() {
         EventLoopGroup group = new NioEventLoopGroup();
         try {
             Bootstrap b = new Bootstrap();
@@ -25,29 +31,65 @@ public class EchoClient {
             f.channel().closeFuture().sync();
         } catch (InterruptedException e) {
             e.printStackTrace();
-        }  finally {
+        } finally {
             group.shutdownGracefully();
         }
     }
 
     private class ChildChannelHandler extends ChannelInitializer<SocketChannel> {
         protected void initChannel(SocketChannel ch) {
-            ByteBuf delimiter = Unpooled.copiedBuffer("$_".getBytes());
-            ch.pipeline().addLast(new DelimiterBasedFrameDecoder(1024, delimiter));
-            ch.pipeline().addLast(new StringDecoder());
-            ch.pipeline().addLast(new EchoClientHandler());
+            ch.pipeline().addLast("frameDecoder", new LengthFieldBasedFrameDecoder(65535, 0, 2, 0, 2));
+            ch.pipeline().addLast("msgpack decoder", new MsgPackDecoder());
+            ch.pipeline().addLast("frameEncoder", new LengthFieldPrepender(2));
+            ch.pipeline().addLast("msgpack encoder", new MsgPackEncoder());
+            ch.pipeline().addLast(new EchoClientHandler(sendNumber));
         }
     }
 
-    public static void main(String[] args) {
-        int port = 8080;
-        if(args != null && args.length > 0) {
-            try {
-                port = Integer.valueOf(args[0]);
-            } catch (NumberFormatException e) {
-                e.printStackTrace();
-            }
+    private class EchoClientHandler extends ChannelHandlerAdapter {
+
+        private final int sendNumber;
+
+        public EchoClientHandler(int sendNumber) {
+            this.sendNumber = sendNumber;
         }
-        new EchoClient().connect(port, "127.0.0.1");
+
+        public void channelActive(ChannelHandlerContext ctx) {
+            UserInfo[] infos = createUserInfos();
+            for (UserInfo userInfo : infos) {
+                System.out.println(userInfo);
+                ctx.write(userInfo);
+            }
+            ctx.flush();
+        }
+
+        public void channelRead(ChannelHandlerContext ctx, Object msg) {
+            System.out.println("client receive the msgpack message : " + msg);
+            ctx.write(msg);
+        }
+
+        public void channelReadComplete(ChannelHandlerContext ctx) {
+            ctx.flush();
+        }
+
+        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+            cause.printStackTrace();
+            ctx.close();
+        }
+
+        private UserInfo[] createUserInfos() {
+            UserInfo[] userInfos = new UserInfo[sendNumber];
+            UserInfo userInfo = null;
+            for (int i = 0; i < sendNumber; i++) {
+                userInfo = new UserInfo(i, "ABCDEFG--->" + i);
+                userInfos[i] = userInfo;
+            }
+            return userInfos;
+        }
+
+    }
+
+    public static void main(String[] args) {
+        new EchoClient("127.0.0.1", 8080, 11).connect();
     }
 }

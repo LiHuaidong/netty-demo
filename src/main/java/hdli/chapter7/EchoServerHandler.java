@@ -1,7 +1,5 @@
 package hdli.chapter7;
 
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerAdapter;
 import io.netty.channel.ChannelHandlerContext;
@@ -9,21 +7,18 @@ import io.netty.channel.ChannelHandlerContext;
 @ChannelHandler.Sharable
 public class EchoServerHandler extends ChannelHandlerAdapter {
 
-    int counter = 0;
+    public EchoServerHandler() {
+    }
 
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
-        String body = (String) msg;
-        System.out.println("This is " + ++counter + " times receive client : [" + body + "]");
-        body += "$_";
+        UserInfo userInfo = (UserInfo) msg;
+        System.out.println("client receive the msgpack message : " + userInfo);
 
-        ByteBuf echo = Unpooled.copiedBuffer(body.getBytes());
-        ctx.writeAndFlush(echo);
+        ctx.writeAndFlush(msg);
     }
 
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         cause.printStackTrace();
         ctx.close();
     }
-
-
 }
